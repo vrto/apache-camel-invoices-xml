@@ -46,8 +46,8 @@
             <from uri="seda:foreignInvoicesChannel" />
             <transform>
                 <method bean="foreignPaymentCreator" method="createPayment" />
-                <to uri="seda:bankingChannel" />
             </transform>
+            <to uri="seda:bankingChannel" />
         </route>
 
         <route>
