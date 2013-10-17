@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns = "http://www.springframework.org/schema/beans"
+       xmlns:xsi = "http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:camel = "http://camel.apache.org/schema/spring"
+       xmlns:context = "http://www.springframework.org/schema/context"
+       xsi:schemaLocation = "http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.5.xsd
+         http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
+
+    <context:component-scan base-package = "com.vrtoonjava" />
+
+    <camelContext xmlns="http://camel.apache.org/schema/spring">
+
+        <errorHandler id="dlc" type="DeadLetterChannel" deadLetterUri="log:failedPayments" />
+
+        <route>
+            <from uri="seda:newInvoicesChannel" />
+            <log message = "Invoices processing STARTED" loggingLevel="INFO" />
+            <split>
+                <simple>body</simple>
+                <to uri="seda:singleInvoicesChannel" />
+            </split>
+        </route>
+
+        <route>
+            <from uri="seda:singleInvoicesChannel" />
+            <filter>
+                <method bean="lowEnoughAmountPredicate" method="matches" />
+                <to uri="seda:filteredInvoicesChannel" />
+            </filter>
+        </route>
+
+        <route>
+            <from uri="seda:filteredInvoicesChannel" />
+            <choice>
+                <when>
+                    <simple>${body.isForeign}</simple>
+                    <to uri="seda:foreignInvoicesChannel" />
+                </when>
+                <otherwise>
+                    <to uri="seda:localInvoicesChannel" />
+                </otherwise>
+            </choice>
+        </route>
+
+        <route>
+            <from uri="seda:foreignInvoicesChannel" />
+            <transform>
+                <method bean="foreignPaymentCreator" method="createPayment" />
+                <to uri="seda:bankingChannel" />
+            </transform>
+        </route>
+
+        <route>
+            <from uri="seda:localInvoicesChannel" />
+            <transform>
+                <method bean="localPaymentCreator" method="createPayment" />
+            </transform>
+            <to uri="seda:bankingChannel" />
+        </route>
+
+        <route errorHandlerRef="dlc">
+            <from uri="seda:bankingChannel" />
+            <bean ref="paymentProcessor" method="processPayment" />
+        </route>
+    </camelContext>
+
+</beans>
